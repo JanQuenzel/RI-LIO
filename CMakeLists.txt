@@ -58,11 +58,10 @@ find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(PCL 1.8 REQUIRED)
 
-
 message(Eigen: ${EIGEN3_INCLUDE_DIR})
 
 include_directories(
-	${catkin_INCLUDE_DIRS} 
+  ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
   ${PCL_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
@@ -85,7 +84,9 @@ catkin_package(
 )
 
 add_executable(rilio_mapping src/laserMapping.cpp include/ikd-Tree/ikd_Tree.cpp src/preprocess.cpp)
-target_link_libraries(rilio_mapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${PYTHON_LIBRARIES} ${OpenCV_LIBS})
+add_dependencies(rilio_mapping ${catkin_EXPORTED_TARGETS})
+target_link_libraries(rilio_mapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${PYTHON_LIBRARIES} ${OpenCV_LIBS} jsoncpp)
 
 add_executable(CorrectProjection src/CorrectProjection.cpp)
-target_link_libraries(CorrectProjection ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+add_dependencies(CorrectProjection ${catkin_EXPORTED_TARGETS})
+target_link_libraries(CorrectProjection ${catkin_LIBRARIES} ${PCL_LIBRARIES} jsoncpp)

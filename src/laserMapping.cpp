@@ -1252,7 +1252,7 @@ int main(int argc, char **argv)
                 // Draw projection points
                 for (int i = 0; i < pixel_pro.size(); i++)
                 {
-                    cv::Point p(int(pixel_pro[i][0]), int(pixel_pro[i][1]));
+                    cv::Point p(int(pixel_pro[i](0)), int(pixel_pro[i](1)));
                     cv::circle(imgWithSelectedPixels, p, 1, cv::Scalar(0, 0, 255), -1);
                 }
                 densemsg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", imgWithSelectedPixels).toImageMsg();
