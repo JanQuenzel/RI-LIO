@@ -60,6 +60,7 @@ void Preprocess::extract_calibration_param()
   std::ifstream ifs(ROOT_DIR + calibration_json); // open file
   if (!reader.parse(ifs, root))
   {
+      ROS_ERROR_STREAM("R: " << (ROOT_DIR+calibration_json) << "\n");
     ROS_ERROR("Can NOT Find Lidar Calibration File!\n");
   }
   else
@@ -96,14 +97,51 @@ void Preprocess::OUST128_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     ROS_ERROR("Invaild points size!");
     return;
   }
+
+  const int h_resolution = width;
+  constexpr float scan_period = 0.1f;
+  int max_t = 0;
+
   ref_img = cv::Mat(height, width, CV_8UC1, cv::Scalar(0));
-  for (int v = 0; v < height; v++)
-    for (int u = 0; u < width; u++)
+  if ( recompute_time_uv )
+  for (int v = 0, i = 0; v < height; v++)
+    for (int u = 0; u < width; u++, ++i)
+    {
+      const int uu = (u + width - pixel_shift_by_row[v]) % width;
+      auto &pt = pl_ouster.points[v * width + uu];
+      int t = ((i % h_resolution) * 1.0 / h_resolution * scan_period * 1e9);
+      //if ( (uu & 511) == 0 || u == (width-1) )
+      //{
+      //    std::cout << "v: " << v << " u: " << u << " t: " << pt.t << " " << t << std::endl;;
+      //}
+      pt.t = int(t);
+      if ( pt.t > max_t ) max_t = pt.t;
+      ref_img.at<uint8_t>(v, u) = pt.reflectivity;
+    }
+  if ( old_ouster )
+  for (int v = 0, i = 0; v < height; v++)
+    for (int u = 0; u < width; u++, ++i)
+    {
+      const int uu = (u + width - pixel_shift_by_row[v]) % width;
+      auto &pt = pl_ouster.points[v * width + uu];
+      pt.reflectivity *= 1.f/255.f;
+      if ( pt.t > max_t ) max_t = pt.t;
+      ref_img.at<uint8_t>(v, u) = pt.reflectivity;
+    }
+
+  if ( ! old_ouster && ! recompute_time_uv )
+  for (int v = 0, i = 0; v < height; v++)
+    for (int u = 0; u < width; u++, ++i)
     {
       const int uu = (u + width - pixel_shift_by_row[v]) % width;
       const auto &pt = pl_ouster.points[v * width + uu];
+      if ( pt.t > max_t ) max_t = pt.t;
       ref_img.at<uint8_t>(v, u) = pt.reflectivity;
     }
+
+  if ( max_t > pl_ouster.points.back().t )
+      ROS_WARN_STREAM("Last stamp time is larger! " << max_t << " > " << pl_ouster.points.back().t);
+  //ROS_INFO_STREAM("max_t: " << max_t << " last: " << pl_ouster.points.back().t);
 }
 
 void Preprocess::pub_func(PointCloudXYZI &pl, const ros::Time &ct)

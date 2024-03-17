@@ -81,6 +81,7 @@ double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_pl
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
 int kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
 bool runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = true, path_en = true;
+bool recompute_time_uv = false, old_ouster = false;
 /**************************/
 
 float res_last[100000] = {0.0};
@@ -108,6 +109,8 @@ int randseed = 0;
 int select_num = 1000;
 double res_ratio = 0.01;
 bool show_ref_img = false;
+std::shared_ptr<std::ofstream> posesFile = nullptr;
+int64_t lidar_ts_ns = 0;
 
 vector<vector<int>> pointSearchInd_surf;
 vector<BoxPointType> cub_needrm;
@@ -117,6 +120,7 @@ VV2D pixel_pro;
 vector<double> extrinT(3, 0.0);
 vector<double> extrinR(9, 0.0);
 deque<double> time_buffer;
+deque<int64_t> time_buffer_ns;
 deque<cv::Mat> img_buffer;
 deque<PointCloudOuster::Ptr> lidar_buffer;
 deque<sensor_msgs::Imu::ConstPtr> imu_buffer;
@@ -330,6 +334,7 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
     img_buffer.push_back(ref_img_out);
     lidar_buffer.push_back(ptr);
     time_buffer.push_back(msg->header.stamp.toSec());
+    time_buffer_ns.push_back(msg->header.stamp.toNSec());
     last_timestamp_lidar = msg->header.stamp.toSec();
     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
     mtx_buffer.unlock();
@@ -374,6 +379,7 @@ bool sync_packages(MeasureGroup &meas)
         meas.lidar = lidar_buffer.front();
         ref_img = img_buffer.front();
         meas.lidar_beg_time = time_buffer.front();
+        lidar_ts_ns = time_buffer_ns.front();
         if (meas.lidar->points.size() <= 1) // time too little
         {
             lidar_end_time = meas.lidar_beg_time + lidar_mean_scantime;
@@ -415,6 +421,7 @@ bool sync_packages(MeasureGroup &meas)
     img_buffer.pop_front();
     lidar_buffer.pop_front();
     time_buffer.pop_front();
+    time_buffer_ns.pop_front();
     lidar_pushed = false;
     return true;
 }
@@ -706,6 +713,15 @@ void publish_odometry(const ros::Publisher &pubOdomAftMapped)
     q.setZ(odomAftMapped.pose.pose.orientation.z);
     transform.setRotation(q);
     br.sendTransform(tf::StampedTransform(transform, odomAftMapped.header.stamp, "camera_init", "body"));
+    {
+        // write to file:
+        if ( ! posesFile ) posesFile = std::make_shared<std::ofstream>("./ri_lio_after_map_poses.txt");
+        if( posesFile && posesFile->is_open() )
+        {
+             (*posesFile) << (lidar_ts_ns) << " " << transform.getOrigin().x() << " " << transform.getOrigin().y() << " " << transform.getOrigin().z()
+                          << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << std::endl;
+        }
+    }
 }
 
 void publish_path(const ros::Publisher pubPath)
@@ -991,6 +1007,11 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         Eigen::Matrix<double, 1, 6> J_pixel_xi = jacobian_pixel_uv * J_uv_point * J_point_xi;
         ekfom_data.h_x.block<1, 12>(i + effct_feat_num, 0) << res_ratio * J_pixel_xi, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
         ekfom_data.h(i + effct_feat_num) = -res_ratio * error_pixel;
+
+        if constexpr ( false )
+        if ( ( i & 511) == 0 )
+        cout << "r: " << ekfom_data.h(i + effct_feat_num) << " h: " << ekfom_data.h_x.block<1, 6>(i + effct_feat_num, 0) << " v: " << ori_pixel << " " << pro_pixel << " i: " << p_near.intensity << " e: " << error_pixel << std::endl;
+
     }
     solve_time += omp_get_wtime() - solve_start_;
 }
@@ -1027,6 +1048,8 @@ int main(int argc, char **argv)
     nh.param<string>("preprocess/metadata_json", p_pre->metadata_json, "config/metadata_RILIO.json");
     nh.param<string>("preprocess/calibration_json", p_pre->calibration_json, "config/lidar_calibration.json");
     nh.param<bool>("runtime_pos_log_enable", runtime_pos_log, true);
+    nh.param<bool>("old_ouster", old_ouster, false);
+    nh.param<bool>("recompute_time_uv", recompute_time_uv, false);
     nh.param<bool>("mapping/extrinsic_est_en", extrinsic_est_en, false);
     nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en, false);
     nh.param<int>("pcd_save/interval", pcd_save_interval, -1);
@@ -1057,6 +1080,8 @@ int main(int argc, char **argv)
     p_pre->extract_lidar_param();
     width = p_pre->width;
     height = p_pre->height;
+    p_pre->old_ouster = old_ouster;
+    p_pre->recompute_time_uv = recompute_time_uv;
     lidar_origin_to_beam_origin = p_pre->lidar_origin_to_beam_origin;
     beam_angle_up = p_pre->beam_angle_up;
     BEAM_ANGLE_INV = 1 / (p_pre->beam_angle_up + p_pre->beam_angle_down);
@@ -1065,6 +1090,7 @@ int main(int argc, char **argv)
     // Note that the coordinate system of the point cloud here is sensor_link
     Lidar_T_wrt_IMU << VEC_FROM_ARRAY(extrinT);
     Lidar_R_wrt_IMU << MAT_FROM_ARRAY(extrinR);
+    ROS_INFO_STREAM("T: " << Lidar_T_wrt_IMU.transpose() << "\n" << Lidar_R_wrt_IMU);
     p_imu->set_extrinsic(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU);
     p_imu->set_gyr_cov(V3D(gyr_cov, gyr_cov, gyr_cov));
     p_imu->set_acc_cov(V3D(acc_cov, acc_cov, acc_cov));

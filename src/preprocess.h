@@ -46,6 +46,8 @@ public:
   PointCloudOuster pl_ouster;
   cv::Mat ref_img;
 
+  bool old_ouster = false;
+  bool recompute_time_uv = false;
   double blind;
   string metadata_json, calibration_json;
 
