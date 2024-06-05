@@ -40,13 +40,15 @@ public:
   ~Preprocess();
 
   void extract_lidar_param();
-  void process_oust128(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudOuster::Ptr &pcl_out, cv::Mat &ref_img_out);
+  void process_oust128(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudOuster::Ptr &pcl_out, cv::Mat &ref_img_out, float & last_pt_time);
 
   // Preprocessed point cloud and reflectivity images
   PointCloudOuster pl_ouster;
   cv::Mat ref_img;
+  int max_t;
 
   bool old_ouster = false;
+  bool use_compensated = false;
   bool recompute_time_uv = false;
   double blind;
   string metadata_json, calibration_json;

@@ -80,11 +80,12 @@ void Preprocess::extract_calibration_param()
   }
 }
 
-void Preprocess::process_oust128(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudOuster::Ptr &pcl_out, cv::Mat &ref_img_out)
+void Preprocess::process_oust128(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudOuster::Ptr &pcl_out, cv::Mat &ref_img_out, float & last_pt_time)
 {
   OUST128_handler(msg);
   *pcl_out = pl_ouster;
   ref_img_out = ref_img.clone();
+  last_pt_time = max_t;
 }
 
 void Preprocess::OUST128_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
@@ -100,47 +101,65 @@ void Preprocess::OUST128_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
 
   const int h_resolution = width;
   constexpr float scan_period = 0.1f;
-  int max_t = 0;
+  max_t = 0;
 
   ref_img = cv::Mat(height, width, CV_8UC1, cv::Scalar(0));
   if ( recompute_time_uv )
-  for (int v = 0, i = 0; v < height; v++)
-    for (int u = 0; u < width; u++, ++i)
-    {
-      const int uu = (u + width - pixel_shift_by_row[v]) % width;
-      auto &pt = pl_ouster.points[v * width + uu];
-      int t = ((i % h_resolution) * 1.0 / h_resolution * scan_period * 1e9);
-      //if ( (uu & 511) == 0 || u == (width-1) )
-      //{
-      //    std::cout << "v: " << v << " u: " << u << " t: " << pt.t << " " << t << std::endl;;
-      //}
-      pt.t = int(t);
-      if ( pt.t > max_t ) max_t = pt.t;
-      ref_img.at<uint8_t>(v, u) = pt.reflectivity;
-    }
-  if ( old_ouster )
-  for (int v = 0, i = 0; v < height; v++)
-    for (int u = 0; u < width; u++, ++i)
-    {
-      const int uu = (u + width - pixel_shift_by_row[v]) % width;
-      auto &pt = pl_ouster.points[v * width + uu];
-      pt.reflectivity *= 1.f/255.f;
-      if ( pt.t > max_t ) max_t = pt.t;
-      ref_img.at<uint8_t>(v, u) = pt.reflectivity;
-    }
+  {
+      for (int v = 0, i = 0; v < height; v++)
+        for (int u = 0; u < width; u++, ++i)
+        {
+          const int uu = (u + width - pixel_shift_by_row[v]) % width;
+          auto &pt = pl_ouster.points[v * width + uu];
+          int t = ((i % h_resolution) * 1.0 / h_resolution * scan_period * 1e9);
+          //if ( (uu & 511) == 0 || u == (width-1) )
+          //{
+          //    std::cout << "v: " << v << " u: " << u << " t: " << pt.t << " " << t << std::endl;;
+          //}
+          pt.t = int(t);
+          if ( pt.t > max_t ) max_t = pt.t;
+          ref_img.at<uint8_t>(v, u) = pt.reflectivity;
+        }
+      return;
+  }
+  if ( old_ouster ) // had 16bit reflectivity values
+  {
+      for (int v = 0, i = 0; v < height; v++)
+        for (int u = 0; u < width; u++, ++i)
+        {
+          const int uu = (u + width - pixel_shift_by_row[v]) % width;
+          auto &pt = pl_ouster.points[v * width + uu];
+          pt.reflectivity *= 1.f/255.f;
+          ref_img.at<uint8_t>(v, u) = pt.reflectivity;
+          if ( pt.t > max_t ) max_t = pt.t;
+        }
+      return;
+  }
+  if ( use_compensated ) // comp is written to intensity within [0,1]
+  {
+      for (int v = 0, i = 0; v < height; v++)
+        for (int u = 0; u < width; u++, ++i)
+        {
+          const int uu = (u + width - pixel_shift_by_row[v]) % width;
+          auto &pt = pl_ouster.points[v * width + uu];
+          pt.reflectivity = pt.intensity * 255.f; // rescale to used reflectivity [0,255]
+          ref_img.at<uint8_t>(v, u) = pt.reflectivity;
+          if ( pt.t > max_t ) max_t = pt.t;
+        }
+    return;
+  }
 
-  if ( ! old_ouster && ! recompute_time_uv )
   for (int v = 0, i = 0; v < height; v++)
     for (int u = 0; u < width; u++, ++i)
     {
       const int uu = (u + width - pixel_shift_by_row[v]) % width;
       const auto &pt = pl_ouster.points[v * width + uu];
-      if ( pt.t > max_t ) max_t = pt.t;
       ref_img.at<uint8_t>(v, u) = pt.reflectivity;
+      if ( pt.t > max_t ) max_t = pt.t;
     }
 
-  if ( max_t > pl_ouster.points.back().t )
-      ROS_WARN_STREAM("Last stamp time is larger! " << max_t << " > " << pl_ouster.points.back().t);
+  //if ( max_t > pl_ouster.points.back().t )
+  //  ROS_WARN_STREAM("Last stamp time is larger! " << max_t << " > " << pl_ouster.points.back().t);
   //ROS_INFO_STREAM("max_t: " << max_t << " last: " << pl_ouster.points.back().t);
 }
 
