@@ -77,15 +77,21 @@ void extract_ouster_param(string metadata_json)
     else
     {
         // Read the basic parameters of LiDAR
+        ROS_INFO_STREAM("read now... ");
         height = root["data_format"]["pixels_per_column"].asInt();
+        ROS_INFO_STREAM("read height: " << height);
         width = root["data_format"]["columns_per_frame"].asInt();
+        ROS_INFO_STREAM("read width: " << width);
         beam_angle_up = root["beam_altitude_angles"][0].asFloat();
+        ROS_INFO_STREAM("read beam_angle_up: " << beam_angle_up);
         beam_angle_up = beam_angle_up * M_PI / 180;
         beam_angle_down = -root["beam_altitude_angles"][height - 1].asFloat();
+        ROS_INFO_STREAM("read beam_angle_up: " << beam_angle_down);
         beam_angle_down = beam_angle_down * M_PI / 180;
 
         // Read the pixel_shift_by_row
         array = root["data_format"]["pixel_shift_by_row"];
+        ROS_INFO_STREAM("read pixel_shift_by_row... " << array.size());
         pixel_shift_by_row.resize(array.size());
         for (int i = 0; i < array.size(); i++)
         {
@@ -190,6 +196,8 @@ int main(int argc, char **argv)
         if (total_num >= selnum_perring * height)
             flg_exit = true;
     }
+    //for ( auto p : num_perring )
+    //    cout << "ring: " << p << endl;
 
     Json::Value root;
     Json::StyledWriter sw;

@@ -3,10 +3,13 @@
 
     <param name="frame_skip" type="int" value="20" />
     <param name="selnum_perring" type="int" value="20000" />
-    <param name="out_path" type="string" value="config/lidar_calibration_RILIO_os0_128.json" />
+    <!--<param name="out_path" type="string" value="config/lidar_calibration_RILIO_os0_128.json" />-->
+    <param name="out_path" type="string" value="config/lidar_calibration_RILIO_os_enwide.json" />
     <param name="blind" type="double" value="1.0" />
-    <param name="lid_topic" type="string" value="/os_cloud_node/points"/>
-    <param name="metadata_path" type="string" value="config/os0_1024.json" />
+    <!--<param name="lid_topic" type="string" value="/os_cloud_node/points"/>-->
+    <param name="lid_topic" type="string" value="/ouster/points"/>
+    <!--<param name="metadata_path" type="string" value="config/os0_1024.json" />-->
+    <param name="metadata_path" type="string" value="config/os_enwide.json" />
     <node pkg="rilio" type="CorrectProjection" name="CorrectProjection" output="screen" /> 
 
 </launch>
