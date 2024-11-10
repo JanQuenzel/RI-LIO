@@ -134,6 +134,10 @@ int main(int argc, char **argv)
     nh.param<string>("metadata_path", metadata_path, "config/metadata_RILIO.json");
     nh.param<string>("out_path", out_path, "config/lidar_calibration_RILIO.json");
 
+
+    // TODO: make it work when in os_sensor:
+    // => apply inverse lidar_to_sensor_transform
+
     ros::Subscriber sub_pcl = nh.subscribe(lid_topic, 200000, pcl_cbk);
     extract_ouster_param(metadata_path);
     BEAM_ANGLE_INV = 1 / (beam_angle_up + beam_angle_down);
